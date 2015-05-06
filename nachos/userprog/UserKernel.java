@@ -3,6 +3,8 @@ package nachos.userprog;
 import nachos.machine.*;
 import nachos.threads.*;
 import nachos.userprog.*;
+import java.util.LinkedList;
+import java.util.*;
 
 /**
  * A kernel that can support multiple user processes.
@@ -27,6 +29,14 @@ public class UserKernel extends ThreadedKernel {
 	Machine.processor().setExceptionHandler(new Runnable() {
 		public void run() { exceptionHandler(); }
 	    });
+	pl = new Lock();
+	//pl.acquire();
+	pages = new LinkedList<Integer>();
+	int n = Machine.processor().getNumPhysPages();
+	for(int i = 0; i < n; i++){
+		pages.add(i);
+	}
+	//pl.release();
     }
 
     /**
@@ -106,10 +116,84 @@ public class UserKernel extends ThreadedKernel {
     public void terminate() {
 	super.terminate();
     }
+    
+    public static class FileManager{
+		public int count = 1;
+		public boolean unlink = false;
+	}
+	
+	private static HashMap<String, FileManager> fileManager = new HashMap<String, FileManager>();
+	
+	//private static Lock fileLock = new Lock();
+	
+	public static boolean createFile(String filename){
+		boolean status = Machine.interrupt().disable();
+		if(!fileManager.containsKey(filename)){
+			fileManager.put(filename, new FileManager());
+			Machine.interrupt().restore(status);
+			return true;
+		}else{
+			Machine.interrupt().restore(status);
+			return false;
+		}
+	}
+	
+	public static boolean openFile(String filename){
+		boolean status = Machine.interrupt().disable();
+		FileManager tmp = fileManager.get(filename);
+		if(tmp != null){
+			tmp.count++;
+			Machine.interrupt().restore(status);
+			return true;
+		}else{
+			fileManager.put(filename, new FileManager());
+			Machine.interrupt().restore(status);
+			return true;
+		}
+	}
+	
+	public static boolean closeFile(String filename){
+		boolean status = Machine.interrupt().disable();
+		FileManager tmp = fileManager.get(filename);
+		if(tmp != null){
+			if(tmp.count > 0){
+				tmp.count --;
+			}
+			if(tmp.unlink && tmp.count == 0){
+				fileSystem.remove(filename);
+				fileManager.remove(filename);
+			}
+			Machine.interrupt().restore(status);
+			return true;
+		}
+		Machine.interrupt().restore(status);
+		return false;
+	}
+	
+	public static boolean unlinkFile(String filename){
+		boolean status = Machine.interrupt().disable();
+		FileManager tmp = fileManager.get(filename);
+		if(tmp == null){
+			Machine.interrupt().restore(status);
+			return false;
+		}
+		
+		if(tmp.count == 0){
+			fileSystem.remove(filename);
+			fileManager.remove(filename);
+		}
+		else{
+			tmp.unlink = true;
+		}
+		Machine.interrupt().restore(status);
+		return true;
+	}
 
     /** Globally accessible reference to the synchronized console. */
     public static SynchConsole console;
 
     // dummy variables to make javac smarter
     private static Coff dummy1 = null;
+    public static LinkedList<Integer> pages = null; 
+    public static Lock pl;
 }
